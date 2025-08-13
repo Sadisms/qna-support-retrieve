@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core.config import get_config
@@ -18,5 +18,5 @@ def verify_token(credentials: HTTPAuthorizationCredentials) -> bool:
     return True
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = security):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     return verify_token(credentials)
