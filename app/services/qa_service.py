@@ -7,7 +7,7 @@ from app.models.database import QAModel
 
 def save_qa(
     db: SQLAlchemySession, 
-    ticket_id: str, 
+    ticket_id: int, 
     question: str, 
     answer: str, 
     source: dict
@@ -24,5 +24,5 @@ def save_qa(
     return qa.id
 
 
-def get_qa(db: SQLAlchemySession, ticket_ids: List[str]) -> list[type[QAModel]]:
+def get_qa(db: SQLAlchemySession, ticket_ids: List[int]) -> List[QAModel]:
     return db.query(QAModel).filter(QAModel.ticket_id.in_(ticket_ids)).all()

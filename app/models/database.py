@@ -10,7 +10,7 @@ class QAModel(BaseModel):
     __tablename__ = "qa"
     
     id = Column(Integer, primary_key=True, index=True)
-    ticket_id = Column(Text, nullable=False)
+    ticket_id = Column(Integer, nullable=False)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)

@@ -22,15 +22,9 @@ class Dialog(BaseModel):
 
 
 class SaveQABody(BaseModel):
-    ticket_id: str = Field(..., min_length=1, max_length=100, description="Unique ticket ID")
+    ticket_id: int
     question: str
     dialog: List[Dialog]
-    
-    @validator('ticket_id')
-    def validate_ticket_id(cls, v):
-        if not v.strip():
-            raise ValueError('Ticket ID cannot be empty')
-        return v.strip()
 
 
 class SaneQAResponse(BaseModel):
@@ -56,7 +50,11 @@ class GetAnswerResultResponse(BaseModel):
     question: str = Field(..., description="Found question")
     answer: str = Field(..., description="Corresponding answer")
     similarity: float = Field(..., ge=0.0, le=1.0, description="Similarity score")
-    ticket_id: str = Field(..., description="Ticket ID")
+    ticket_id: int = Field(..., description="Ticket ID")
+    
+    class Config:
+        # Принудительная валидация типов
+        validate_assignment = True
 
 
 class GetAnswerResponse(BaseModel):

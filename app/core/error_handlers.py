@@ -15,7 +15,7 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 async def qna_exception_handler(_: Request, exc: QnAException) -> JSONResponse:
-    logger.error(f"QnA Exception: {exc.message}", extra={"details": exc.details})
+    logger.error("QnA Exception: %s", exc.message, extra={"details": exc.details})
     
     status_code = 500
     if isinstance(exc, DatabaseException):
@@ -34,7 +34,7 @@ async def qna_exception_handler(_: Request, exc: QnAException) -> JSONResponse:
 
 
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    logger.warning(f"HTTP Exception: {exc.detail}")
+    logger.warning("HTTP Exception: %s", exc.detail)
     
     return JSONResponse(
         status_code=exc.status_code,
@@ -47,7 +47,7 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
 
 
 async def general_exception_handler(_: Request, exc: Exception) -> JSONResponse:
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    logger.error("Unhandled exception: %s", str(exc), exc_info=True)
     
     return JSONResponse(
         status_code=500,

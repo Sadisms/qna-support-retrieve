@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.database import get_db_context
 from app.core.exceptions import DatabaseException, LLMException, EmbeddingException, VectorStoreException
-from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse
+from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse, RoleType
 from app.services.qa_service import save_qa, get_qa
 from app.services.llm_client import OllamaClient
 from app.services.embeddings import Embedder
@@ -27,14 +27,28 @@ qdrant_helper = QdrantHelper(
 @router.post("/save", response_model=SaneQAResponse)
 async def save_qa_handler(body: SaveQABody) -> SaneQAResponse:
     try:
-        dialog_text = "\n".join([f"{msg.role}: {msg.content}" for msg in body.dialog])
+        dialog_text = "\n".join([msg.role + ": " + msg.content for msg in body.dialog])
         extracted_question, extracted_answer = ollama_client.extract_qa_pair(dialog_text)
         
         if not extracted_question or not extracted_answer:
-            return SaneQAResponse(
-                status="error", 
-                message="Failed to extract question or answer from dialog"
-            )
+            fallback_question = None
+            fallback_answer = None
+            
+            for msg in body.dialog:
+                if msg.role == RoleType.USER and "?" in msg.content and not fallback_question:
+                    fallback_question = msg.content.strip()
+                elif msg.role == RoleType.SUPPORT and fallback_question and not fallback_answer:
+                    fallback_answer = msg.content.strip()
+                    break
+            
+            if fallback_question and fallback_answer:
+                extracted_question = fallback_question
+                extracted_answer = fallback_answer
+            else:
+                return SaneQAResponse(
+                    status="error", 
+                    message="Failed to extract question or answer from dialog"
+                )
 
         try:
             vector_question = embedder.encode(extracted_question)
@@ -88,19 +102,19 @@ async def get_answer_handler(body: GetAnswerBody) -> GetAnswerResponse:
             with get_db_context() as db:
                 ticket_ids = [result["ticket_id"] for result in search_results]
                 qas = get_qa(db, ticket_ids)
+                
+                results = []
+                for result in search_results:
+                    qa = next((qa for qa in qas if qa.ticket_id == result["ticket_id"]), None)
+                    if qa:
+                        results.append(GetAnswerResultResponse(
+                            question=qa.question,
+                            answer=qa.answer,
+                            similarity=result["score"],
+                            ticket_id=int(qa.ticket_id)
+                        ))
         except Exception as e:
             raise DatabaseException(f"Error getting data from database: {str(e)}")
-
-        results = []
-        for result in search_results:
-            qa = next((qa for qa in qas if qa.ticket_id == result["ticket_id"]), None)
-            if qa:
-                results.append(GetAnswerResultResponse(
-                    question=qa.question,
-                    answer=qa.answer,
-                    similarity=result["score"],
-                    ticket_id=qa.ticket_id
-                ))
 
         return GetAnswerResponse(
             query=body.question,
@@ -110,5 +124,6 @@ async def get_answer_handler(body: GetAnswerBody) -> GetAnswerResponse:
         
     except (DatabaseException, EmbeddingException, VectorStoreException):
         raise
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -10,6 +10,13 @@ class OllamaClient:
         self.base_url = base_url.rstrip('/')
         self.model = model
 
+    def is_available(self, timeout: int = 5) -> bool:
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=timeout)
+            return response.status_code == 200
+        except:
+            return False
+
     def _build_question_prompt(self, dialog_text: str) -> str:
         prompt = f"""
         Ты помощник поддержки.
@@ -62,7 +69,7 @@ class OllamaClient:
 
         Формат ответа:
         Верни ТОЛЬКО JSON-объект без пояснений и форматирования кода:
-        {"question": "...", "answer": "..."}
+        {{"question": "...", "answer": "..."}}
         - "question": первый осмысленный вопрос пользователя одной короткой фразой,
           с вопросительным знаком в конце; если нет, укажи NO_QUESTION.
         - "answer": краткий ответ саппорта на этот вопрос; если нет, укажи NO_ANSWER.
@@ -101,7 +108,7 @@ class OllamaClient:
         except requests.RequestException as e:
             return None
 
-    def extract_qa_pair(self, dialog_text: str, timeout: int = 20) -> Tuple[Optional[str], Optional[str]]:
+    def extract_qa_pair(self, dialog_text: str, timeout: int = 60) -> Tuple[Optional[str], Optional[str]]:
         url = f"{self.base_url}/api/generate"
 
         payload = {
@@ -112,6 +119,9 @@ class OllamaClient:
             "top_p": 0.95,
             "stream": False,
         }
+
+        if not self.is_available():
+            return None, None
 
         try:
             response = requests.post(url, json=payload, timeout=timeout)
@@ -157,5 +167,9 @@ class OllamaClient:
                 return question, answer
 
             return None, None
+            
         except requests.RequestException:
+            return None, None
+
+        except Exception:
             return None, None
