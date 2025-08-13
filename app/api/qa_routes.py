@@ -37,6 +37,7 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
                         message="Ticket already saved",
                         extracted_question=existing.question,
                         extracted_answer=existing.answer,
+                        ticket_id=int(existing.ticket_id),
                         already_saved=True
                     )
         except Exception as e:
@@ -92,6 +93,7 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
             message="QA pair successfully saved",
             extracted_question=extracted_question,
             extracted_answer=extracted_answer,
+            ticket_id=int(body.ticket_id),
             already_saved=False
         )
         

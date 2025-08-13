@@ -32,6 +32,7 @@ class SaneQAResponse(BaseModel):
     message: Optional[str] = Field(None, description="Result message")
     extracted_question: Optional[str] = Field(None, description="Extracted question")
     extracted_answer: Optional[str] = Field(None, description="Extracted answer")
+    ticket_id: Optional[int] = Field(None, description="Ticket ID")
     already_saved: bool = Field(default=False, description="Indicator that the ticket has already been saved")
     timestamp: datetime = Field(default_factory=datetime.now, description="Processing time")
 
