@@ -4,7 +4,7 @@ from app.core.database import get_db_context
 from app.core.exceptions import DatabaseException, LLMException, EmbeddingException, VectorStoreException
 from app.core.auth import get_current_user
 from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse, RoleType
-from app.services.qa_service import save_qa, get_qa
+from app.services.qa_service import save_qa, get_qa, get_qa_by_ticket_id
 from app.services.llm_client import OllamaClient
 from app.services.embeddings import Embedder
 from app.services.qdrant import QdrantHelper
@@ -28,6 +28,20 @@ qdrant_helper = QdrantHelper(
 @router.post("/save", response_model=SaneQAResponse)
 async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user)) -> SaneQAResponse:
     try:
+        try:
+            with get_db_context() as db:
+                existing = get_qa_by_ticket_id(db, body.ticket_id)
+                if existing:
+                    return SaneQAResponse(
+                        status="success",
+                        message="Ticket already saved",
+                        extracted_question=existing.question,
+                        extracted_answer=existing.answer,
+                        already_saved=True
+                    )
+        except Exception as e:
+            raise DatabaseException(f"Error checking existing ticket: {str(e)}")
+
         dialog_text = "\n".join([msg.role + ": " + msg.content for msg in body.dialog])
         extracted_question, extracted_answer = ollama_client.extract_qa_pair(dialog_text)
         
@@ -77,7 +91,8 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
             status="success",
             message="QA pair successfully saved",
             extracted_question=extracted_question,
-            extracted_answer=extracted_answer
+            extracted_answer=extracted_answer,
+            already_saved=False
         )
         
     except (DatabaseException, LLMException, EmbeddingException, VectorStoreException):

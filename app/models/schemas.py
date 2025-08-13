@@ -32,7 +32,8 @@ class SaneQAResponse(BaseModel):
     message: Optional[str] = Field(None, description="Result message")
     extracted_question: Optional[str] = Field(None, description="Extracted question")
     extracted_answer: Optional[str] = Field(None, description="Extracted answer")
-    timestamp: datetime = Field(default_factory=datetime.now, description="Время обработки")
+    already_saved: bool = Field(default=False, description="Indicator that the ticket has already been saved")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Processing time")
 
 
 class GetAnswerBody(BaseModel):
@@ -53,7 +54,6 @@ class GetAnswerResultResponse(BaseModel):
     ticket_id: int = Field(..., description="Ticket ID")
     
     class Config:
-        # Принудительная валидация типов
         validate_assignment = True
 
 

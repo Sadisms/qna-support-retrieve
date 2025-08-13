@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy.orm import Session as SQLAlchemySession
 
@@ -26,3 +26,7 @@ def save_qa(
 
 def get_qa(db: SQLAlchemySession, ticket_ids: List[int]) -> List[QAModel]:
     return db.query(QAModel).filter(QAModel.ticket_id.in_(ticket_ids)).all()
+
+
+def get_qa_by_ticket_id(db: SQLAlchemySession, ticket_id: int) -> Optional[QAModel]:
+    return db.query(QAModel).filter(QAModel.ticket_id == ticket_id).first()
