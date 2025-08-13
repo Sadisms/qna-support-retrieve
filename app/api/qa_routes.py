@@ -45,26 +45,12 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
 
         dialog_text = "\n".join([msg.role + ": " + msg.content for msg in body.dialog])
         extracted_question, extracted_answer = ollama_client.extract_qa_pair(dialog_text)
-        
+
         if not extracted_question or not extracted_answer:
-            fallback_question = None
-            fallback_answer = None
-            
-            for msg in body.dialog:
-                if msg.role == RoleType.USER and "?" in msg.content and not fallback_question:
-                    fallback_question = msg.content.strip()
-                elif msg.role == RoleType.SUPPORT and fallback_question and not fallback_answer:
-                    fallback_answer = msg.content.strip()
-                    break
-            
-            if fallback_question and fallback_answer:
-                extracted_question = fallback_question
-                extracted_answer = fallback_answer
-            else:
-                return SaneQAResponse(
-                    status="error", 
-                    message="Failed to extract question or answer from dialog"
-                )
+            return SaneQAResponse(
+                status="error",
+                message="No question or answer found in dialog"
+            )
 
         try:
             vector_question = embedder.encode(extracted_question)
