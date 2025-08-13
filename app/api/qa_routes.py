@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from app.core.database import get_db_context
 from app.core.exceptions import DatabaseException, LLMException, EmbeddingException, VectorStoreException
+from app.core.auth import get_current_user
 from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse, RoleType
 from app.services.qa_service import save_qa, get_qa
 from app.services.llm_client import OllamaClient
@@ -25,7 +26,7 @@ qdrant_helper = QdrantHelper(
 
 
 @router.post("/save", response_model=SaneQAResponse)
-async def save_qa_handler(body: SaveQABody) -> SaneQAResponse:
+async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user)) -> SaneQAResponse:
     try:
         dialog_text = "\n".join([msg.role + ": " + msg.content for msg in body.dialog])
         extracted_question, extracted_answer = ollama_client.extract_qa_pair(dialog_text)
@@ -86,7 +87,7 @@ async def save_qa_handler(body: SaveQABody) -> SaneQAResponse:
 
 
 @router.post("/search", response_model=GetAnswerResponse)
-async def get_answer_handler(body: GetAnswerBody) -> GetAnswerResponse:
+async def get_answer_handler(body: GetAnswerBody, _: bool = Depends(get_current_user)) -> GetAnswerResponse:
     try:
         try:
             vector_question = embedder.encode(body.question)

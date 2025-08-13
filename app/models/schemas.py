@@ -68,3 +68,8 @@ class HealthCheckResponse(BaseModel):
     status: str = Field(..., description="Service status")
     timestamp: datetime = Field(default_factory=datetime.now, description="Check time")
     version: str = Field(default="0.1.0", description="Service version")
+
+
+class AuthErrorResponse(BaseModel):
+    detail: str = Field(..., description="Error message")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Error time")

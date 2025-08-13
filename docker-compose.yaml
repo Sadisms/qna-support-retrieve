@@ -39,12 +39,6 @@ services:
       - ollama
     ports:
       - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://support:support_pass@postgres:5432/support_ai
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: gemma2:2b
-      QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION_NAME: support_qa
     volumes:
       - ./app:/server/app
     healthcheck:
