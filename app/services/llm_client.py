@@ -1,4 +1,5 @@
 import json
+import re
 
 import requests
 
@@ -14,7 +15,7 @@ class OllamaClient:
         try:
             response = requests.get(f"{self.base_url}/api/tags", timeout=timeout)
             return response.status_code == 200
-        except:
+        except requests.RequestException:
             return False
 
     def _build_question_prompt(self, dialog_text: str) -> str:
@@ -114,6 +115,69 @@ class OllamaClient:
     def _build_prompt(self, dialog_text: str) -> str:
         return self._build_question_prompt(dialog_text)
 
+    def _remove_think_and_channels(self, text: str) -> str:
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        if text.startswith("```"):
+            parts = text.split("```")
+            candidate = None
+            for part in parts:
+                p = part.strip()
+                if not p:
+                    continue
+                if p.lower().startswith("json"):
+                    p = p[4:].strip()
+                if p:
+                    candidate = p
+                    break
+            if candidate is not None:
+                text = candidate
+
+        text = text.strip()
+        return text
+
+    def _extract_first_json_object(self, text: str) -> Optional[dict]:
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+        in_string = False
+        is_escaped = False
+        depth = 0
+        start_index = -1
+        for index, ch in enumerate(text):
+            if in_string:
+                if is_escaped:
+                    is_escaped = False
+                elif ch == "\\":
+                    is_escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            else:
+                if ch == '"':
+                    in_string = True
+                    continue
+                if ch == '{':
+                    if depth == 0:
+                        start_index = index
+                    depth += 1
+                    continue
+                if ch == '}':
+                    if depth > 0:
+                        depth -= 1
+                        if depth == 0 and start_index != -1:
+                            candidate = text[start_index:index + 1]
+                            try:
+                                parsed = json.loads(candidate)
+                                if isinstance(parsed, dict):
+                                    return parsed
+                            except Exception:
+                                pass
+        return None
+
     def extract_main_question(self, dialog_text: str, timeout: int = 300) -> Optional[str]:
         url = f"{self.base_url}/api/generate"
 
@@ -130,15 +194,29 @@ class OllamaClient:
             response = requests.post(url, json=payload, timeout=timeout)
             response.raise_for_status()
             data = response.json()
-
             answer = data.get("response", "").strip()
             if answer == "":
                 return None
-            return answer
+            cleaned = self._remove_think_and_channels(answer)
+            if not cleaned:
+                return None
+            if cleaned.startswith("{") and cleaned.endswith("}"):
+                parsed = self._extract_first_json_object(cleaned)
+                if parsed and isinstance(parsed.get("question"), str):
+                    q = parsed["question"].strip()
+                    if q and q != "NO_QUESTION":
+                        return q
+                    return None
+            first_line = cleaned.splitlines()[0].strip()
+            if first_line.startswith('"') and first_line.endswith('"'):
+                first_line = first_line[1:-1].strip()
+            if first_line in {"", "NO_QUESTION"}:
+                return None
+            return first_line
         except requests.RequestException as e:
             return None
 
-    def extract_qa_pair(self, dialog_text: str, timeout: int = 60) -> Tuple[Optional[str], Optional[str]]:
+    def extract_qa_pair(self, dialog_text: str, timeout: int = 60*10) -> Tuple[Optional[str], Optional[str]]:
         url = f"{self.base_url}/api/generate"
 
         payload = {
@@ -151,6 +229,7 @@ class OllamaClient:
         }
 
         if not self.is_available():
+            print("Model is not available")
             return None, None
 
         try:
@@ -158,32 +237,21 @@ class OllamaClient:
             response.raise_for_status()
             data = response.json()
             raw = data.get("response", "").strip()
+            cleaned = self._remove_think_and_channels(raw)
+            print(cleaned)
 
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                parsed = None
-                if "```" in raw:
-                    parts = raw.split("```")
-                    for part in parts:
-                        part_stripped = part.strip()
-                        if part_stripped.startswith("json"):
-                            part_stripped = part_stripped[4:].strip()
-                        try:
-                            parsed = json.loads(part_stripped)
-                            break
-                        except Exception:
-                            continue
-                if parsed is None and ("Вопрос:" in raw or "Ответ:" in raw):
-                    question = None
-                    answer = None
-                    for line in raw.splitlines():
-                        line_stripped = line.strip()
-                        if line_stripped.lower().startswith("вопрос:") and question is None:
-                            question = line_stripped.split(":", 1)[1].strip()
-                        if line_stripped.lower().startswith("ответ:") and answer is None:
-                            answer = line_stripped.split(":", 1)[1].strip()
-                    return question or None, answer or None
+            parsed = self._extract_first_json_object(cleaned)
+            print(parsed)
+            if parsed is None and ("Вопрос:" in cleaned or "Ответ:" in cleaned):
+                question = None
+                answer = None
+                for line in cleaned.splitlines():
+                    line_stripped = line.strip()
+                    if line_stripped.lower().startswith("вопрос:") and question is None:
+                        question = line_stripped.split(":", 1)[1].strip()
+                    if line_stripped.lower().startswith("ответ:") and answer is None:
+                        answer = line_stripped.split(":", 1)[1].strip()
+                return question or None, answer or None
 
             if isinstance(parsed, dict):
                 question = parsed.get("question")
@@ -197,9 +265,11 @@ class OllamaClient:
                 return question, answer
 
             return None, None
-            
-        except requests.RequestException:
+
+        except requests.RequestException as e:
+            print(e)
             return None, None
 
-        except Exception:
+        except Exception as e:
+            print(e)
             return None, None
