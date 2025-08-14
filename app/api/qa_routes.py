@@ -43,14 +43,31 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
         except Exception as e:
             raise DatabaseException(f"Error checking existing ticket: {str(e)}")
 
-        dialog_text = "\n".join([msg.role + ": " + msg.content for msg in body.dialog])
-        extracted_question, extracted_answer = ollama_client.extract_qa_pair(dialog_text)
+        user_dialog_text = "\n".join([
+            ("USER: " + msg.content) for msg in body.dialog if msg.role == RoleType.USER
+        ])
+        full_dialog_text = "\n".join([
+            (("USER" if msg.role == RoleType.USER else "SUPPORT") + ": " + msg.content)
+            for msg in body.dialog
+        ])
 
-        if not extracted_question or not extracted_answer:
+        extracted_question = (body.question or "").strip()
+        if not extracted_question:
+            extracted_question = ollama_client.extract_main_question(user_dialog_text)
+
+        if not extracted_question:
             return SaneQAResponse(
                 status="error",
-                message="No question or answer found in dialog"
+                message="No question found in ticket or user messages"
             )
+
+        extracted_answer = ollama_client.extract_answer_for_question(
+            extracted_question,
+            full_dialog_text
+        )
+
+        if not extracted_question or not extracted_answer:
+            return SaneQAResponse(status="error", message="No answer found for the question")
 
         try:
             vector_question = embedder.encode(extracted_question)

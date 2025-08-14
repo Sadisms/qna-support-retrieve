@@ -115,6 +115,29 @@ class OllamaClient:
     def _build_prompt(self, dialog_text: str) -> str:
         return self._build_question_prompt(dialog_text)
 
+    def _build_answer_prompt(self, question: str, dialog_text: str) -> str:
+        prompt = f"""
+        Ты помощник поддержки. Не выдумывай ответы и не формулируй новые.
+        Твоя задача: по данному вопросу пользователя найти в диалоге первый явный ответ сотрудника поддержки.
+
+        Правила:
+        - Вопрос уже задан: используй ровно его формулировку ниже
+        - Ответ должен быть взят ТОЛЬКО из реплик сотрудника поддержки
+        - Если явного ответа нет, верни ровно NO_ANSWER
+        - Верни ТОЛЬКО текст ответа без кавычек и пояснений
+
+        Вопрос:
+        <question>
+        {question}
+        </question>
+
+        Диалог:
+        <dialog>
+        {dialog_text}
+        </dialog>
+        """
+        return prompt.strip()
+
     def _remove_think_and_channels(self, text: str) -> str:
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
         if text.startswith("```"):
@@ -214,6 +237,38 @@ class OllamaClient:
                 return None
             return first_line
         except requests.RequestException as e:
+            return None
+
+    def extract_answer_for_question(self, question: str, dialog_text: str, timeout: int = 60 * 10) -> Optional[str]:
+        url = f"{self.base_url}/api/generate"
+
+        payload = {
+            "model": self.model,
+            "prompt": self._build_answer_prompt(question, dialog_text),
+            "max_tokens": 200,
+            "temperature": 0.0,
+            "top_p": 0.9,
+            "stream": False,
+        }
+
+        if not self.is_available():
+            return None
+
+        try:
+            response = requests.post(url, json=payload, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+            raw = data.get("response", "").strip()
+            cleaned = self._remove_think_and_channels(raw)
+            if not cleaned or cleaned == "NO_ANSWER":
+                return None
+            first_line = cleaned.splitlines()[0].strip()
+            if first_line in {"", "NO_ANSWER"}:
+                return None
+            if first_line.startswith('"') and first_line.endswith('"'):
+                first_line = first_line[1:-1].strip()
+            return first_line
+        except requests.RequestException:
             return None
 
     def extract_qa_pair(self, dialog_text: str, timeout: int = 60*10) -> Tuple[Optional[str], Optional[str]]:
