@@ -6,12 +6,14 @@ from qdrant_client.http import models
 
 
 class QdrantHelper:
-    def __init__(self, url: str, collection_name: str):
+    def __init__(self, url: str, collection_name: str, workspace_id: str = None):
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.client = QdrantClient(url=url, prefer_grpc=False)
-        self.collection_name = collection_name
+        self.base_collection_name = collection_name
+        self.workspace_id = workspace_id
+        self.collection_name = f"{workspace_id}_{collection_name}" if workspace_id else collection_name
         self.vector_size = 384
         self._init_collection()
 
@@ -36,6 +38,9 @@ class QdrantHelper:
             raise ValueError("Vector must be 1D or 2D with shape (1, N)")
 
         point_id = payload.get("ticket_id")
+        
+        if self.workspace_id:
+            payload = {**payload, "workspace_id": self.workspace_id}
 
         try:
             self.client.upsert(
@@ -56,11 +61,23 @@ class QdrantHelper:
             raise ValueError("query_vector must be 1D or 2D with shape (1, N)")
 
         try:
+            query_filter = None
+            if self.workspace_id:
+                query_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="workspace_id",
+                            match=models.MatchValue(value=self.workspace_id)
+                        )
+                    ]
+                )
+            
             results = self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=top_k,
-                with_payload=True
+                with_payload=True,
+                query_filter=query_filter
             )
             
             processed_results = [

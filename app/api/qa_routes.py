@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from app.core.database import get_db_context
 from app.core.exceptions import DatabaseException, LLMException, EmbeddingException, VectorStoreException
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_current_workspace
 from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse, RoleType
 from app.services.qa_service import save_qa, get_qa, get_qa_by_ticket_id
 from app.services.llm_client import OllamaClient
@@ -19,18 +19,22 @@ ollama_client = OllamaClient(
     model=config.ollama_model
 )
 embedder = Embedder()
-qdrant_helper = QdrantHelper(
-    url=config.qdrant_url,
-    collection_name=config.qdrant_collection_name
-)
+
+
+def get_qdrant_helper(workspace_id: str) -> QdrantHelper:
+    return QdrantHelper(
+        url=config.qdrant_url,
+        collection_name=config.qdrant_collection_name,
+        workspace_id=workspace_id
+    )
 
 
 @router.post("/save", response_model=SaneQAResponse)
-async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user)) -> SaneQAResponse:
+async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_current_workspace)) -> SaneQAResponse:
     try:
         try:
             with get_db_context() as db:
-                existing = get_qa_by_ticket_id(db, body.ticket_id)
+                existing = get_qa_by_ticket_id(db, workspace_id, body.ticket_id)
                 if existing:
                     return SaneQAResponse(
                         status="success",
@@ -75,6 +79,7 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
             raise EmbeddingException(f"Error creating embedding: {str(e)}")
 
         try:
+            qdrant_helper = get_qdrant_helper(workspace_id)
             qdrant_helper.add_vector(vector_question, body.model_dump())
         except Exception as e:
             raise VectorStoreException(f"Error saving to vector store: {str(e)}")
@@ -83,6 +88,7 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
             with get_db_context() as db:
                 save_qa(
                     db=db,
+                    workspace_id=workspace_id,
                     ticket_id=body.ticket_id,
                     question=extracted_question,
                     answer=extracted_answer,
@@ -107,7 +113,7 @@ async def save_qa_handler(body: SaveQABody, _: bool = Depends(get_current_user))
 
 
 @router.post("/search", response_model=GetAnswerResponse)
-async def get_answer_handler(body: GetAnswerBody, _: bool = Depends(get_current_user)) -> GetAnswerResponse:
+async def get_answer_handler(body: GetAnswerBody, workspace_id: str = Depends(get_current_workspace)) -> GetAnswerResponse:
     try:
         try:
             vector_question = embedder.encode(body.question)
@@ -115,6 +121,7 @@ async def get_answer_handler(body: GetAnswerBody, _: bool = Depends(get_current_
             raise EmbeddingException(f"Error creating embedding: {str(e)}")
 
         try:
+            qdrant_helper = get_qdrant_helper(workspace_id)
             search_results = qdrant_helper.search_similar(vector_question, body.top_k)
         except Exception as e:
             raise VectorStoreException(f"Error searching in vector store: {str(e)}")
@@ -122,7 +129,7 @@ async def get_answer_handler(body: GetAnswerBody, _: bool = Depends(get_current_
         try:
             with get_db_context() as db:
                 ticket_ids = [result["ticket_id"] for result in search_results]
-                qas = get_qa(db, ticket_ids)
+                qas = get_qa(db, workspace_id, ticket_ids)
                 
                 results = []
                 for result in search_results:

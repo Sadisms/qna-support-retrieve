@@ -7,12 +7,14 @@ from app.models.database import QAModel
 
 def save_qa(
     db: SQLAlchemySession, 
+    workspace_id: str,
     ticket_id: int, 
     question: str, 
     answer: str, 
     source: dict
 ) -> int:
     qa = QAModel(
+        workspace_id=workspace_id,
         ticket_id=ticket_id,
         question=question,
         answer=answer,
@@ -24,8 +26,18 @@ def save_qa(
     return qa.id
 
 
-def get_qa(db: SQLAlchemySession, ticket_ids: List[int]) -> List[QAModel]:
-    return db.query(QAModel).filter(QAModel.ticket_id.in_(ticket_ids)).all()
+def get_qa(db: SQLAlchemySession, workspace_id: str, ticket_ids: List[int]) -> List[QAModel]:
+    return db.query(QAModel).filter(
+        QAModel.workspace_id == workspace_id,
+        QAModel.ticket_id.in_(ticket_ids)
+    ).all()
+
+
+def get_qa_by_ticket_id(db: SQLAlchemySession, workspace_id: str, ticket_id: int) -> Optional[QAModel]:
+    return db.query(QAModel).filter(
+        QAModel.workspace_id == workspace_id,
+        QAModel.ticket_id == ticket_id
+    ).first()
 
 
 def get_qa_by_ticket_id(db: SQLAlchemySession, ticket_id: int) -> Optional[QAModel]:
