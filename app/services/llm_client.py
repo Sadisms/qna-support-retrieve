@@ -1,5 +1,6 @@
 import json
 import re
+import httpx
 
 import requests
 import openai
@@ -339,8 +340,18 @@ class OllamaClient(BaseAIClient):
 
 
 class OpenAIClient(BaseAIClient):
-    def __init__(self, api_key: str, model: str = "gpt-4"):
+    def __init__(
+        self, 
+        api_key: str, 
+        model: str = "gpt-4.1",
+        proxy_url: str = None
+    ):
         self.client = openai.OpenAI(api_key=api_key)
+        if proxy_url:
+            self.client = openai.OpenAI(
+                api_key=api_key,
+                http_client=httpx.Client(proxy=proxy_url)
+            )
         self.model = model
 
     def is_available(self) -> bool:

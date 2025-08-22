@@ -21,6 +21,7 @@ class Config(BaseModel):
     # OpenAI settings
     openai_api_key: str | None = None
     openai_model: str = "gpt-4"
+    openai_proxy_url: str | None = None
     
     # Other settings
     database_url: str
@@ -56,6 +57,7 @@ def get_config() -> Config:
         ollama_model=os.getenv("OLLAMA_MODEL", "gemma2:2b"),
         openai_api_key=openai_api_key,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4"),
+        openai_proxy_url=os.getenv("OPENAI_PROXY_URL"),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./qa_support.db"),
         qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
         qdrant_collection_name=os.getenv("QDRANT_COLLECTION_NAME", "qa_support"),

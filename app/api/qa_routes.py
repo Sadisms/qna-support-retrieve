@@ -20,7 +20,8 @@ config = get_config()
 if config.llm_provider == "openai":
     llm_client = OpenAIClient(
         api_key=config.openai_api_key,
-        model=config.openai_model
+        model=config.openai_model,
+        proxy_url=config.openai_proxy_url
     )
 else:
     llm_client = OllamaClient(
