@@ -2,22 +2,12 @@ import json
 import re
 
 import requests
+import openai
 
 from typing import Optional
 
 
-class OllamaClient:
-    def __init__(self, base_url: str, model: str):
-        self.base_url = base_url.rstrip('/')
-        self.model = model
-
-    def is_available(self, timeout: int = 5) -> bool:
-        try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=timeout)
-            return response.status_code == 200
-        except requests.RequestException:
-            return False
-
+class BaseAIClient:
     def _build_question_prompt(self, dialog_text: str) -> str:
         prompt = f"""
         Ты помощник поддержки. Ты НИКОГДА не отвечаешь на вопросы, не даёшь советы и не генерируешь новый контент.
@@ -262,6 +252,19 @@ class OllamaClient:
                                 pass
         return None
 
+
+class OllamaClient(BaseAIClient):
+    def __init__(self, base_url: str, model: str):
+        self.base_url = base_url.rstrip('/')
+        self.model = model
+
+    def is_available(self, timeout: int = 5) -> bool:
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=timeout)
+            return response.status_code == 200
+        except requests.RequestException:
+            return False
+
     def extract_main_question(self, dialog_text: str, timeout: int = 300) -> Optional[str]:
         url = f"{self.base_url}/api/generate"
 
@@ -332,4 +335,90 @@ class OllamaClient:
                 first_line = first_line[1:-1].strip()
             return first_line
         except requests.RequestException:
+            return None
+
+
+class OpenAIClient(BaseAIClient):
+    def __init__(self, api_key: str, model: str = "gpt-4"):
+        self.client = openai.OpenAI(api_key=api_key)
+        self.model = model
+
+    def is_available(self) -> bool:
+        try:
+            self.client.models.list()
+            return True
+        except Exception:
+            return False
+
+    def extract_main_question(self, dialog_text: str, timeout: int = 300) -> Optional[str]:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": self._build_question_prompt(dialog_text)}
+                ],
+                max_tokens=100,
+                temperature=0.0,
+                timeout=timeout
+            )
+            
+            answer = response.choices[0].message.content.strip()
+            if answer == "":
+                return None
+            
+            cleaned = self._remove_think_and_channels(answer)
+            if not cleaned:
+                return None
+            
+            if cleaned.startswith("{") and cleaned.endswith("}"):
+                parsed = self._extract_first_json_object(cleaned)
+                if parsed and isinstance(parsed.get("question"), str):
+                    q = parsed["question"].strip()
+                    if q and q != "NO_QUESTION":
+                        return q
+                    return None
+            
+            first_line = cleaned.splitlines()[0].strip()
+            if first_line.startswith('"') and first_line.endswith('"'):
+                first_line = first_line[1:-1].strip()
+            
+            if first_line in {"", "NO_QUESTION"}:
+                return None
+            
+            return first_line
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            return None
+
+    def extract_answer_for_question(self, question: str, dialog_text: str, timeout: int = 60 * 10) -> Optional[str]:
+        if not self.is_available():
+            return None
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": self._build_answer_prompt(question, dialog_text)}
+                ],
+                max_tokens=200,
+                temperature=0.0,
+                timeout=timeout
+            )
+            
+            raw = response.choices[0].message.content.strip()
+            cleaned = self._remove_think_and_channels(raw)
+            
+            if not cleaned or cleaned == "NO_ANSWER":
+                return None
+            
+            first_line = cleaned.splitlines()[0].strip()
+            if first_line in {"", "NO_ANSWER"}:
+                return None
+            
+            if first_line.startswith('"') and first_line.endswith('"'):
+                first_line = first_line[1:-1].strip()
+            
+            return first_line
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
             return None

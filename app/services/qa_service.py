@@ -38,7 +38,3 @@ def get_qa_by_ticket_id(db: SQLAlchemySession, workspace_id: str, ticket_id: int
         QAModel.workspace_id == workspace_id,
         QAModel.ticket_id == ticket_id
     ).first()
-
-
-def get_qa_by_ticket_id(db: SQLAlchemySession, ticket_id: int) -> Optional[QAModel]:
-    return db.query(QAModel).filter(QAModel.ticket_id == ticket_id).first()

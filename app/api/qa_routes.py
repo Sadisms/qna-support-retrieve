@@ -2,22 +2,32 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from app.core.database import get_db_context
 from app.core.exceptions import DatabaseException, LLMException, EmbeddingException, VectorStoreException
-from app.core.auth import get_current_user, get_current_workspace
+from app.core.auth import get_current_workspace
 from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse, RoleType
 from app.services.qa_service import save_qa, get_qa, get_qa_by_ticket_id
-from app.services.llm_client import OllamaClient
+from app.services.llm_client import OllamaClient, OpenAIClient
 from app.services.embeddings import Embedder
 from app.services.qdrant import QdrantHelper
 from app.core.config import get_config
+
 
 router = APIRouter(prefix="/qa", tags=["QA Operations"])
 
 
 config = get_config()
-ollama_client = OllamaClient(
-    base_url=config.ollama_url,
-    model=config.ollama_model
-)
+
+
+if config.llm_provider == "openai":
+    llm_client = OpenAIClient(
+        api_key=config.openai_api_key,
+        model=config.openai_model
+    )
+else:
+    llm_client = OllamaClient(
+        base_url=config.ollama_url,
+        model=config.ollama_model
+    )
+
 embedder = Embedder()
 
 
@@ -57,7 +67,7 @@ async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_curr
 
         extracted_question = (body.question or "").strip()
         if not extracted_question:
-            extracted_question = ollama_client.extract_main_question(user_dialog_text)
+            extracted_question = llm_client.extract_main_question(user_dialog_text)
 
         if not extracted_question:
             return SaneQAResponse(
@@ -65,7 +75,7 @@ async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_curr
                 message="No question found in ticket or user messages"
             )
 
-        extracted_answer = ollama_client.extract_answer_for_question(
+        extracted_answer = llm_client.extract_answer_for_question(
             extracted_question,
             full_dialog_text
         )
