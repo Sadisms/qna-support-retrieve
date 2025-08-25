@@ -5,7 +5,6 @@ from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
     QnAException,
-    DatabaseException,
     EmbeddingException,
     LLMException,
     VectorStoreException
@@ -18,9 +17,7 @@ async def qna_exception_handler(_: Request, exc: QnAException) -> JSONResponse:
     logger.error("QnA Exception: %s", exc.message, extra={"details": exc.details})
     
     status_code = 500
-    if isinstance(exc, DatabaseException):
-        status_code = 503
-    elif isinstance(exc, (EmbeddingException, LLMException, VectorStoreException)):
+    if isinstance(exc, (EmbeddingException, LLMException, VectorStoreException)):
         status_code = 502
     
     return JSONResponse(
