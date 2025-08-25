@@ -1,6 +1,10 @@
+from typing import Any
+
 import httpx
 
+import numpy as np
 import openai
+from numpy import ndarray, dtype
 
 SYSTEM_PROMPT = """You are a high-precision Retrieval-Augmented Generation assistant.
 Follow these rules strictly:
@@ -37,13 +41,14 @@ class OpenAIClient:
         self.model = model
 
 
-    def embedding(self, text: str) -> list[float]:
+    def embedding(self, text: str) -> ndarray:
         response = openai.embeddings.create(
             model=self.EMBEDDING_MODEL,
             input=text,
             encoding_format=self.EMBEDDING_FORMAT
         )
-        return response.data[0].embedding
+
+        return np.array(response.data[0].embedding)
     
     def rag_search(self, query: str, context: list[dict]) -> str:
         """

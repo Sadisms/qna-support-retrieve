@@ -1,3 +1,5 @@
+from typing import Any, Coroutine
+
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.core.exceptions import LLMException, EmbeddingException, VectorStoreException
@@ -30,7 +32,7 @@ def get_qdrant_helper(workspace_id: str) -> QdrantHelper:
 
 
 @router.post("/save", response_model=BaseResponse)
-async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_current_workspace)) -> SaneQAResponse:
+async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_current_workspace)) -> BaseResponse:
     try:
         full_dialog_text = "\n".join([
             (("USER" if msg.role == RoleType.USER else "SUPPORT") + ": " + msg.content)
@@ -54,7 +56,7 @@ async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_curr
 
 
 @router.post("/search", response_model=GetAnswerResponse)
-async def get_answer_handler(body: GetAnswerBody, workspace_id: str = Depends(get_current_workspace)) -> GetAnswerResponse:
+async def get_answer_handler(body: GetAnswerBody, workspace_id: str = Depends(get_current_workspace)) -> BaseResponse | GetAnswerResponse:
     try:
         embeding = llm_client.embedding(body.question)
         qdrant_helper = get_qdrant_helper(workspace_id)
