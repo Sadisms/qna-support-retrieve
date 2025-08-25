@@ -27,7 +27,6 @@ class QualityMetrics:
     extraction_time: float
     token_count: int
     api_cost: float
-    retry_count: int
 
 class BaseAIClient:
     def __init__(self):
@@ -36,6 +35,8 @@ class BaseAIClient:
     def _build_optimized_question_prompt(self, dialog_text: str) -> str:
         """Enhanced English prompt for question extraction with JSON output"""
         prompt = f"""INSTRUCTION: Extract the first genuine support question from this dialog.
+
+Return the response in the language used by the support agent and the user.
 
 CRITERIA:
 ✓ Contains question words (how, what, where, when, why, can, is, does)
@@ -71,6 +72,8 @@ USER: "Please send me the instructions"
     def _build_optimized_answer_prompt(self, question: str, dialog_text: str) -> str:
         """Enhanced English prompt for answer extraction with JSON output"""
         prompt = f"""INSTRUCTION: Find the direct answer to this specific question from SUPPORT responses.
+
+Return the response in the language used by the support agent and the user.
 
 TARGET QUESTION: {question}
 
@@ -165,17 +168,14 @@ SUPPORT: "What specific issues are you having?"
         return validation_result
 
     def _remove_think_and_channels(self, text: str) -> str:
-        # Удаляем теги <think>
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
         
-        # Обработка markdown блоков кода
         if text.startswith("```"):
             parts = text.split("```")
             for part in parts:
                 p = part.strip()
                 if not p:
                     continue
-                # Пропускаем метки языка
                 if p.lower().startswith(("json", "python", "text")):
                     lines = p.split('\n', 1)
                     if len(lines) > 1:
@@ -186,7 +186,6 @@ SUPPORT: "What specific issues are you having?"
                     text = p
                     break
         
-        # Убираем кавычки в начале и конце
         text = text.strip()
         if text.startswith('"') and text.endswith('"'):
             text = text[1:-1].strip()
@@ -194,7 +193,6 @@ SUPPORT: "What specific issues are you having?"
         return text
 
     def _extract_first_json_object(self, text: str) -> Optional[dict]:
-        # Пробуем сначала простой парсинг
         try:
             parsed = json.loads(text)
             if isinstance(parsed, dict):
@@ -202,7 +200,6 @@ SUPPORT: "What specific issues are you having?"
         except:
             pass
         
-        # Ищем JSON объект в тексте
         import re
         json_pattern = r'\{[^{}]*\}'
         matches = re.findall(json_pattern, text)
@@ -215,7 +212,6 @@ SUPPORT: "What specific issues are you having?"
             except:
                 continue
         
-        # Более сложный поиск вложенных JSON
         in_string = False
         is_escaped = False
         depth = 0
@@ -269,7 +265,6 @@ class OpenAIClient(BaseAIClient):
         self.enable_monitoring = enable_monitoring
         self.default_config = {
             "temperature": 0.1,
-            "max_tokens": 150,
             "top_p": 0.9,
             "frequency_penalty": 0.0,
             "presence_penalty": 0.0,
@@ -283,121 +278,109 @@ class OpenAIClient(BaseAIClient):
         except Exception:
             return False
 
-    def extract_main_question(self, dialog_text: str, timeout: int = 300) -> Optional[QuestionExtractionResult]:
+    def extract_main_question(self, dialog_text: str, timeout: int = 30) -> Optional[QuestionExtractionResult]:
         """Extract question with confidence scoring and structured output"""
         start_time = time.time()
-        retry_count = 0
-        max_retries = 3
         
-        for attempt in range(max_retries):
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert support dialog analyzer. Always respond with valid JSON."},
+                    {"role": "user", "content": self._build_optimized_question_prompt(dialog_text)}
+                ],
+                **self.default_config,
+                timeout=timeout
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Parse JSON response
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": "You are an expert support dialog analyzer. Always respond with valid JSON."},
-                        {"role": "user", "content": self._build_optimized_question_prompt(dialog_text)}
-                    ],
-                    **self.default_config,
-                    timeout=timeout
+                result_data = json.loads(content)
+                result = QuestionExtractionResult(
+                    question=result_data.get("question"),
+                    confidence=float(result_data.get("confidence", 0.0)),
+                    original_text=result_data.get("original_text"),
+                    position=result_data.get("position")
                 )
                 
-                content = response.choices[0].message.content.strip()
+                # Record metrics
+                if self.enable_monitoring:
+                    processing_time = time.time() - start_time
+                    self._record_metrics(processing_time, response.usage.total_tokens)
                 
-                # Parse JSON response
-                try:
-                    result_data = json.loads(content)
-                    result = QuestionExtractionResult(
-                        question=result_data.get("question"),
-                        confidence=float(result_data.get("confidence", 0.0)),
-                        original_text=result_data.get("original_text"),
-                        position=result_data.get("position")
+                return result
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                # Fallback to legacy parsing
+                question = self._fallback_question_extraction(content)
+                if question:
+                    return QuestionExtractionResult(
+                        question=question,
+                        confidence=0.7,  # Lower confidence for fallback
+                        original_text=content,
+                        position=1
                     )
-                    
-                    # Record metrics
-                    if self.enable_monitoring:
-                        processing_time = time.time() - start_time
-                        self._record_metrics(processing_time, response.usage.total_tokens, retry_count)
-                    
-                    return result
-                    
-                except (json.JSONDecodeError, ValueError) as e:
-                    # Fallback to legacy parsing
-                    question = self._fallback_question_extraction(content)
-                    if question:
-                        return QuestionExtractionResult(
-                            question=question,
-                            confidence=0.7,  # Lower confidence for fallback
-                            original_text=content,
-                            position=1
-                        )
-                    
-            except Exception as e:
-                retry_count += 1
-                if attempt == max_retries - 1:
-                    print(f"OpenAI API error after {max_retries} attempts: {e}")
-                    return None
-                time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            return None
                 
         return None
 
-    def extract_answer_for_question(self, question: str, dialog_text: str, timeout: int = 600) -> Optional[AnswerExtractionResult]:
+    def extract_answer_for_question(self, question: str, dialog_text: str, timeout: int = 30) -> Optional[AnswerExtractionResult]:
         """Extract answer with relevance scoring and structured output"""
         start_time = time.time()
-        retry_count = 0
-        max_retries = 3
         
         if not self.is_available():
             return None
             
-        for attempt in range(max_retries):
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert support response analyzer. Always respond with valid JSON."},
+                    {"role": "user", "content": self._build_optimized_answer_prompt(question, dialog_text)}
+                ],
+                **self.default_config,
+                max_tokens=200,
+                timeout=timeout
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Parse JSON response
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": "You are an expert support response analyzer. Always respond with valid JSON."},
-                        {"role": "user", "content": self._build_optimized_answer_prompt(question, dialog_text)}
-                    ],
-                    **self.default_config,
-                    max_tokens=200,
-                    timeout=timeout
+                result_data = json.loads(content)
+                result = AnswerExtractionResult(
+                    answer=result_data.get("answer"),
+                    relevance=float(result_data.get("relevance", 0.0)),
+                    original_text=result_data.get("original_text"),
+                    support_message_id=result_data.get("support_message_id")
                 )
                 
-                content = response.choices[0].message.content.strip()
+                # Record metrics
+                if self.enable_monitoring:
+                    processing_time = time.time() - start_time
+                    self._record_metrics(processing_time, response.usage.total_tokens)
                 
-                # Parse JSON response
-                try:
-                    result_data = json.loads(content)
-                    result = AnswerExtractionResult(
-                        answer=result_data.get("answer"),
-                        relevance=float(result_data.get("relevance", 0.0)),
-                        original_text=result_data.get("original_text"),
-                        support_message_id=result_data.get("support_message_id")
+                return result
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                # Fallback to legacy parsing
+                answer = self._fallback_answer_extraction(content)
+                if answer:
+                    return AnswerExtractionResult(
+                        answer=answer,
+                        relevance=0.7,  # Lower relevance for fallback
+                        original_text=content,
+                        support_message_id=None
                     )
                     
-                    # Record metrics
-                    if self.enable_monitoring:
-                        processing_time = time.time() - start_time
-                        self._record_metrics(processing_time, response.usage.total_tokens, retry_count)
-                    
-                    return result
-                    
-                except (json.JSONDecodeError, ValueError) as e:
-                    # Fallback to legacy parsing
-                    answer = self._fallback_answer_extraction(content)
-                    if answer:
-                        return AnswerExtractionResult(
-                            answer=answer,
-                            relevance=0.7,  # Lower relevance for fallback
-                            original_text=content,
-                            support_message_id=None
-                        )
-                        
-            except Exception as e:
-                retry_count += 1
-                if attempt == max_retries - 1:
-                    print(f"OpenAI API error after {max_retries} attempts: {e}")
-                    return None
-                time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            return None
                 
         return None
     
@@ -471,7 +454,7 @@ class OpenAIClient(BaseAIClient):
             
         return first_line
     
-    def _record_metrics(self, processing_time: float, token_count: int, retry_count: int):
+    def _record_metrics(self, processing_time: float, token_count: int):
         """Record performance metrics"""
         # Cost calculation for gpt-4o-mini pricing
         if "gpt-4o-mini" in self.model:
@@ -489,8 +472,7 @@ class OpenAIClient(BaseAIClient):
         metrics = QualityMetrics(
             extraction_time=processing_time,
             token_count=token_count,
-            api_cost=estimated_cost,
-            retry_count=retry_count
+            api_cost=estimated_cost
         )
         
         self.quality_metrics.append(metrics)
@@ -506,13 +488,10 @@ class OpenAIClient(BaseAIClient):
             
         times = [m.extraction_time for m in self.quality_metrics]
         costs = [m.api_cost for m in self.quality_metrics]
-        retries = [m.retry_count for m in self.quality_metrics]
         
         return {
             "total_extractions": len(self.quality_metrics),
             "avg_processing_time": sum(times) / len(times),
             "total_cost": sum(costs),
-            "avg_cost_per_extraction": sum(costs) / len(costs),
-            "success_rate": len([r for r in retries if r == 0]) / len(retries),
-            "avg_retries": sum(retries) / len(retries)
+            "avg_cost_per_extraction": sum(costs) / len(costs)
         }
