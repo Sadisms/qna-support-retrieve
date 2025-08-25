@@ -17,17 +17,11 @@ router = APIRouter(prefix="/qa", tags=["QA Operations"])
 config = get_config()
 
 
-if config.llm_provider == "openai":
-    llm_client = OpenAIClient(
-        api_key=config.openai_api_key,
-        model=config.openai_model,
-        proxy_url=config.openai_proxy_url
-    )
-else:
-    llm_client = OllamaClient(
-        base_url=config.ollama_url,
-        model=config.ollama_model
-    )
+llm_client = OpenAIClient(
+    api_key=config.openai_api_key,
+    model=config.openai_model,
+    proxy_url=config.openai_proxy_url,
+)
 
 embedder = Embedder()
 
@@ -58,31 +52,21 @@ async def save_qa_handler(body: SaveQABody, workspace_id: str = Depends(get_curr
         except Exception as e:
             raise DatabaseException(f"Error checking existing ticket: {str(e)}")
 
-        user_dialog_text = "\n".join([
-            ("USER: " + msg.content) for msg in body.dialog if msg.role == RoleType.USER
-        ])
         full_dialog_text = "\n".join([
             (("USER" if msg.role == RoleType.USER else "SUPPORT") + ": " + msg.content)
             for msg in body.dialog
         ])
 
-        extracted_question = (body.question or "").strip()
-        if not extracted_question:
-            extracted_question = llm_client.extract_main_question(user_dialog_text)
-
-        if not extracted_question:
+        qa_result = llm_client.extract_qa_pair_with_validation(full_dialog_text)
+            
+        if not qa_result:
             return SaneQAResponse(
                 status="error",
-                message="No question found in ticket or user messages"
+                message="No high-quality Q&A pair found in dialog. Dialog may not contain business-relevant questions or clear answers."
             )
-
-        extracted_answer = llm_client.extract_answer_for_question(
-            extracted_question,
-            full_dialog_text
-        )
-
-        if not extracted_question or not extracted_answer:
-            return SaneQAResponse(status="error", message="No answer found for the question")
+        
+        extracted_question = qa_result["question"]
+        extracted_answer = qa_result["answer"]
 
         try:
             vector_question = embedder.encode(extracted_question)
@@ -166,3 +150,47 @@ async def get_answer_handler(body: GetAnswerBody, workspace_id: str = Depends(ge
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/metrics")
+async def get_performance_metrics(_: str = Depends(get_current_workspace)):
+    """Get performance metrics for Q&A extraction (OpenAI only)"""
+    
+    stats = llm_client.get_performance_stats()
+    
+    if not stats:
+        return {
+            "message": "No performance data available yet",
+            "total_extractions": 0
+        }
+    
+    # Add cost comparison and recommendations
+    response = {
+        **stats,
+        "cost_analysis": {
+            "model_used": config.openai_model,
+            "cost_per_extraction": stats.get('avg_cost_per_extraction', 0),
+            "estimated_monthly_cost_1k_extractions": stats.get('avg_cost_per_extraction', 0) * 1000,
+        },
+        "performance_status": {
+            "processing_time": "✅ Good" if stats.get('avg_processing_time', 0) < 2.0 else "⚠️ Slow",
+            "success_rate": "✅ Excellent" if stats.get('success_rate', 0) > 0.95 else "⚠️ Needs attention",
+            "cost_efficiency": "✅ Optimal" if stats.get('avg_cost_per_extraction', 0) < 0.005 else "⚠️ High cost"
+        },
+        "recommendations": []
+    }
+    
+    # Add recommendations based on metrics
+    if stats.get('avg_processing_time', 0) > 2.0:
+        response["recommendations"].append("Consider prompt optimization to reduce processing time")
+    
+    if stats.get('success_rate', 1) < 0.95:
+        response["recommendations"].append("Review error patterns to improve API success rate")
+    
+    if stats.get('avg_cost_per_extraction', 0) > 0.005:
+        response["recommendations"].append("Consider token optimization to reduce costs")
+    
+    if not response["recommendations"]:
+        response["recommendations"] = ["All metrics within optimal ranges"]
+    
+    return response

@@ -11,16 +11,9 @@ except ImportError:
 
 
 class Config(BaseModel):
-    # LLM settings
-    llm_provider: str = "ollama"  # "ollama" or "openai"
-    
-    # Ollama settings
-    ollama_url: str
-    ollama_model: str
-    
     # OpenAI settings
     openai_api_key: str | None = None
-    openai_model: str = "gpt-4"
+    openai_model: str = "gpt-4o-mini"
     openai_proxy_url: str | None = None
     
     # Other settings
@@ -44,19 +37,9 @@ def get_config() -> Config:
                 ws_id, token = pair.strip().split(":", 1)
                 workspace_tokens[ws_id] = token
     
-    llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
-    
-    # Проверяем, что если выбран OpenAI, то есть API ключ
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if llm_provider == "openai" and not openai_api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is required when LLM_PROVIDER=openai")
-    
     return Config(
-        llm_provider=llm_provider,
-        ollama_url=os.getenv("OLLAMA_URL", "http://localhost:11434"),
-        ollama_model=os.getenv("OLLAMA_MODEL", "gemma2:2b"),
-        openai_api_key=openai_api_key,
-        openai_model=os.getenv("OPENAI_MODEL", "gpt-4"),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_proxy_url=os.getenv("OPENAI_PROXY_URL"),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./qa_support.db"),
         qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
