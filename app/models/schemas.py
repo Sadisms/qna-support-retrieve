@@ -27,19 +27,13 @@ class SaveQABody(BaseModel):
     dialog: List[Dialog]
 
 
-class SaneQAResponse(BaseModel):
+class BaseResponse(BaseModel):
     status: Literal["success", "error"] = Field(..., description="Operation status")
     message: Optional[str] = Field(None, description="Result message")
-    extracted_question: Optional[str] = Field(None, description="Extracted question")
-    extracted_answer: Optional[str] = Field(None, description="Extracted answer")
-    ticket_id: Optional[int] = Field(None, description="Ticket ID")
-    already_saved: bool = Field(default=False, description="Indicator that the ticket has already been saved")
-    timestamp: datetime = Field(default_factory=datetime.now, description="Processing time")
 
 
 class GetAnswerBody(BaseModel):
     question: str = Field(..., min_length=3, max_length=1000, description="Question to search for")
-    top_k: int = Field(default=5, ge=1, le=20, description="Number of results")
     
     @validator('question')
     def validate_question(cls, v):
@@ -48,20 +42,9 @@ class GetAnswerBody(BaseModel):
         return v.strip()
 
 
-class GetAnswerResultResponse(BaseModel):
-    question: str = Field(..., description="Found question")
-    answer: str = Field(..., description="Corresponding answer")
-    similarity: float = Field(..., ge=0.0, le=1.0, description="Similarity score")
-    ticket_id: int = Field(..., description="Ticket ID")
-    
-    class Config:
-        validate_assignment = True
-
-
 class GetAnswerResponse(BaseModel):
     query: str = Field(..., description="Original query")
-    results: List[GetAnswerResultResponse] = Field(..., description="Search results")
-    total_found: int = Field(..., ge=0, description="Total number of found results")
+    answer: str = Field(..., description="Answer to the question")
     timestamp: datetime = Field(default_factory=datetime.now, description="Processing time")
 
 

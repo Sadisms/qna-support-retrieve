@@ -84,7 +84,7 @@ class QdrantHelper:
                 {
                     "ticket_id": point.payload.get("ticket_id"),
                     "question": point.payload.get("question"),
-                    "answer": point.payload.get("answer"),
+                    "dialog": point.payload.get("dialog"),
                     "score": point.score
                 }
                 for point in results

@@ -11,10 +11,6 @@ class QnAException(Exception):
         super().__init__(self.message)
 
 
-class DatabaseException(QnAException):
-    pass
-
-
 class EmbeddingException(QnAException):
     pass
 

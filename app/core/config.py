@@ -17,7 +17,6 @@ class Config(BaseModel):
     openai_proxy_url: str | None = None
     
     # Other settings
-    database_url: str
     qdrant_url: str
     qdrant_collection_name: str
     api_token: str
@@ -41,7 +40,6 @@ def get_config() -> Config:
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_proxy_url=os.getenv("OPENAI_PROXY_URL"),
-        database_url=os.getenv("DATABASE_URL", "sqlite:///./qa_support.db"),
         qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
         qdrant_collection_name=os.getenv("QDRANT_COLLECTION_NAME", "qa_support"),
         api_token=api_token,
