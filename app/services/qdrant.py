@@ -14,7 +14,7 @@ class QdrantHelper:
         self.base_collection_name = collection_name
         self.workspace_id = workspace_id
         self.collection_name = f"{workspace_id}_{collection_name}" if workspace_id else collection_name
-        self.vector_size = 10_000  
+        self.vector_size = 1536  
         self._init_collection()
 
     def _init_collection(self):
