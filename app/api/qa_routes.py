@@ -5,7 +5,7 @@ from app.core.exceptions import DatabaseException, LLMException, EmbeddingExcept
 from app.core.auth import get_current_workspace
 from app.models.schemas import SaveQABody, SaneQAResponse, GetAnswerBody, GetAnswerResponse, GetAnswerResultResponse, RoleType
 from app.services.qa_service import save_qa, get_qa, get_qa_by_ticket_id
-from app.services.llm_client import OllamaClient, OpenAIClient
+from app.services.llm_client import OpenAIClient
 from app.services.embeddings import Embedder
 from app.services.qdrant import QdrantHelper
 from app.core.config import get_config

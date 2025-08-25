@@ -3,9 +3,8 @@ import re
 import httpx
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
-import requests
 import openai
 
 
