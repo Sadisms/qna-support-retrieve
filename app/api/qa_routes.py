@@ -61,20 +61,11 @@ async def get_answer_handler(body: GetAnswerBody, workspace_id: str = Depends(ge
         embeding = llm_client.embedding(body.question)
         qdrant_helper = get_qdrant_helper(workspace_id)
         results = qdrant_helper.search_similar(embeding, top_k=5)
-        
         if not results:
-            return BaseResponse(
-                status="error",
-                message="No results found"
-            )
-        
+            raise VectorStoreException("No results found", {"query": body.question})
+
         llm_answer = llm_client.rag_search(body.question, results)
-        if not llm_answer:
-            return BaseResponse(
-                status="error",
-                message="LLM answer is empty"
-            )
-        
+
         return GetAnswerResponse(
             query=body.question,
             answer=llm_answer
